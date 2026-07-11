@@ -94,7 +94,7 @@ with aba1:
                     
                     # Gerar link do WhatsApp com mensagem
                     msg = f"Olá {row['nome']}, segue o lembrete da sua parcela de hoje: R$ {row['valor_parcela']:.2f}. Chave Pix para pagamento: {row['chave_pix']}"
-                    link_zap = f"https://wa.me{row['whatsapp']}?text={msg.replace(' ', '%20')}"
+                    link_zap = f"https://wa.me/{row['whatsapp']}?text={msg.replace(' ', '%20')}"
                     st.markdown(f"[💬 Cobrar no WhatsApp]({link_zap})")
 
     with col_B:
