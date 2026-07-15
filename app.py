@@ -142,8 +142,8 @@ with aba2:
 with aba3:
     st.header("📈 Relatório Financeiro e Lucratividade")
     try:
-        total_receber = pd.read_sql_query("SELECT SUM(valor_parcela) as total FROM parcelas WHERE status != 'Pago'", conn)['total'].fillna(0).values[0]
-        total_recebido = pd.read_sql_query("SELECT SUM(valor_parcela) as total FROM parcelas WHERE status = 'Pago'", conn)['total'].fillna(0).values[0]
+        total_receber = pd.read_sql_query("SELECT SUM(valor_parcela) as total FROM parcelas WHERE status != 'Pago'", conn)['total'].fillna(0).values
+        total_recebido = pd.read_sql_query("SELECT SUM(valor_parcela) as total FROM parcelas WHERE status = 'Pago'", conn)['total'].fillna(0).values
         
         col1, col2 = st.columns(2)
         col1.metric("💰 Total a Receber (Futuro)", f"R$ {total_receber:.2f}")
@@ -182,20 +182,20 @@ with aba4:
 # ----------------- ABA 5: REMOVER DADOS -----------------
 with aba5:
     st.header("❌ Excluir Cliente do Sistema")
-    try:
-        df_selecao = pd.read_sql_query("SELECT id, nome FROM clientes", conn)
-        if not df_selecao.empty:
-            opcoes_clientes = [f"{row['id']} - {row['nome']}" for idx, row in df_selecao.iterrows()]
-            cliente_para_excluir = st.selectbox("Selecione o cliente para deletar:", opciones_clientes)
-            id_cliente_excluir = int(cliente_para_excluir.split(" - ")[0])
-            
-            if st.button("🗑️ Apagar Permanentemente", type="primary"):
-                cursor.execute("DELETE FROM parcelas WHERE cliente_id = ?", (id_cliente_excluir,))
-                cursor.execute("DELETE FROM clientes WHERE id = ?", (id_cliente_excluir,))
-                conn.commit()
-                st.success("Removido com sucesso!")
-                st.rerun()
-        else:
-            st.info("Nenhum cliente cadastrado no momento para exclusão.")
-    except:
-        st.info("Sem dados disponíveis para exclusão.")
+    df_selecao = pd.read_sql_query("SELECT id, nome FROM clientes", conn)
+    
+    if not df_selecao.empty:
+        opcoes_clientes = [f"{row['id']} - {row['nome']}" for idx, row in df_selecao.iterrows()]
+        cliente_para_excluir = st.selectbox("Selecione o cliente para deletar:", opciones_clientes)
+        
+        id_cliente_excluir = int(cliente_para_excluir.split(" - ")[0])
+        nome_cliente_excluir = cliente_para_excluir.split(" - ")[1]
+        
+        if st.button(f"🗑️ Apagar {nome_cliente_excluir} permanentemente", type="primary"):
+            cursor.execute("DELETE FROM parcelas WHERE cliente_id = ?", (id_cliente_excluir,))
+            cursor.execute("DELETE FROM clientes WHERE id = ?", (id_cliente_excluir,))
+            conn.commit()
+            st.success(f"Cliente {nome_cliente_excluir} removido com sucesso!")
+            st.rerun()
+    else:
+        st.info("Nenhum cliente cadastrado no momento para exclusão.")
