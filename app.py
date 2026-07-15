@@ -39,8 +39,11 @@ cursor = conn.cursor()
 
 # Atualização automática de atrasados
 data_hoje = datetime.now().strftime("%Y-%m-%d")
-cursor.execute("UPDATE parcelas SET status = 'Atrasado' WHERE data_vencimento < ? AND status = 'Pendente'", (data_hoje,))
-conn.commit()
+try:
+    cursor.execute("UPDATE parcelas SET status = 'Atrasado' WHERE data_vencimento < ? AND status = 'Pendente'", (data_hoje,))
+    conn.commit()
+except:
+    pass
 
 st.title("💸 Sistema de Cobrança Diária Pro")
 
@@ -53,43 +56,52 @@ with aba1:
     col_A, col_B = st.columns(2)
     with col_A:
         st.header("📋 Para Hoje")
-        query_hoje = """
-        SELECT p.id, c.nome, c.whatsapp, c.chave_pix, p.numero_parcela, p.valor_parcela, p.status 
-        FROM parcelas p JOIN clientes c ON p.cliente_id = c.id
-        WHERE p.data_vencimento = ? AND p.status != 'Pago'
-        """
-        df_hoje = pd.read_sql_query(query_hoje, conn)
-        if df_hoje.empty:
-            st.info("Tudo limpo para hoje!")
-        else:
-            for idx, row in df_hoje.iterrows():
-                with st.expander(f"{row['nome']} - R$ {row['valor_parcela']:.2f}"):
-                    if st.button("✔ Confirmar Pagamento", key=f"pago_{row['id']}"):
-                        cursor.execute("UPDATE parcelas SET status = 'Pago' WHERE id = ?", (row['id'],))
-                        conn.commit()
-                        st.rerun()
-                    msg = f"Olá {row['nome']}, lembrete da sua parcela de hoje: R$ {row['valor_parcela']:.2f}. Pix: {row['chave_pix']}"
-                    link_zap = f"https://wa.me{row['whatsapp']}?text={msg.replace(' ', '%20')}"
-                    st.markdown(f"[💬 Cobrar no WhatsApp]({link_zap})")
+        try:
+            query_hoje = """
+            SELECT p.id, c.nome, c.whatsapp, c.chave_pix, p.numero_parcela, p.valor_parcela, p.status 
+            FROM parcelas p 
+            INNER JOIN clientes c ON p.cliente_id = c.id
+            WHERE p.data_vencimento = ? AND p.status != 'Pago'
+            """
+            df_hoje = pd.read_sql_query(query_hoje, conn, params=(data_hoje,))
+            if df_hoje.empty:
+                st.info("Tudo limpo para hoje!")
+            else:
+                for idx, row in df_hoje.iterrows():
+                    with st.expander(f"{row['nome']} - R$ {row['valor_parcela']:.2f}"):
+                        if st.button("✔ Confirmar Pagamento", key=f"pago_{row['id']}"):
+                            cursor.execute("UPDATE parcelas SET status = 'Pago' WHERE id = ?", (row['id'],))
+                            conn.commit()
+                            st.rerun()
+                        msg = f"Olá {row['nome']}, lembrete da sua parcela de hoje: R$ {row['valor_parcela']:.2f}. Pix: {row['chave_pix']}"
+                        link_zap = f"https://wa.me{row['whatsapp']}?text={msg.replace(' ', '%20')}"
+                        st.markdown(f"[💬 Cobrar no WhatsApp]({link_zap})")
+        except Exception as e:
+            st.info("Aguardando a inserção de clientes ativos.")
 
     with col_B:
         st.header("🚨 Cobranças Atrasadas")
-        query_atrasados = """
-        SELECT p.id, c.nome, c.whatsapp, p.data_vencimento, p.valor_parcela, p.numero_parcela
-        FROM parcelas p JOIN clientes c ON p.cliente_id = c.id WHERE p.status = 'Atrasado'
-        """
-        df_atrasados = pd.read_sql_query(query_atrasados, conn)
-        if df_atrasados.empty:
-            st.success("Nenhum cliente em atraso! 🎉")
-        else:
-            for idx, row in df_atrasados.iterrows():
-                with st.container(border=True):
-                    st.write(f"⚠️ **{row['nome']}** (Parc: {row['numero_parcela']})")
-                    st.write(f"Valor: R$ {row['valor_parcela']:.2f} | Venceu: {row['data_vencimento']}")
-                    if st.button("✔ Baixar Atrasado", key=f"atrasado_{row['id']}"):
-                        cursor.execute("UPDATE parcelas SET status = 'Pago' WHERE id = ?", (row['id'],))
-                        conn.commit()
-                        st.rerun()
+        try:
+            query_atrasados = """
+            SELECT p.id, c.nome, c.whatsapp, p.data_vencimento, p.valor_parcela, p.numero_parcela
+            FROM parcelas p 
+            INNER JOIN clientes c ON p.cliente_id = c.id 
+            WHERE p.status = 'Atrasado'
+            """
+            df_atrasados = pd.read_sql_query(query_atrasados, conn)
+            if df_atrasados.empty:
+                st.success("Nenhum cliente em atraso! 🎉")
+            else:
+                for idx, row in df_atrasados.iterrows():
+                    with st.container(border=True):
+                        st.write(f"⚠️ **{row['nome']}** (Parc: {row['numero_parcela']})")
+                        st.write(f"Valor: R$ {row['valor_parcela']:.2f} | Venceu: {row['data_vencimento']}")
+                        if st.button("✔ Baixar Atrasado", key=f"atrasado_{row['id']}"):
+                            cursor.execute("UPDATE parcelas SET status = 'Pago' WHERE id = ?", (row['id'],))
+                            conn.commit()
+                            st.rerun()
+        except:
+            st.info("Nenhum atraso registrado.")
 
 # ----------------- ABA 2: NOVA VENDA -----------------
 with aba2:
@@ -129,53 +141,61 @@ with aba2:
 # ----------------- ABA 3: PROJEÇÃO E LUCROS -----------------
 with aba3:
     st.header("📈 Relatório Financeiro e Lucratividade")
-    
-    total_receber = pd.read_sql_query("SELECT SUM(valor_parcela) as total FROM parcelas WHERE status != 'Pago'", conn)['total'].fillna(0).values[0]
-    total_recebido = pd.read_sql_query("SELECT SUM(valor_parcela) as total FROM parcelas WHERE status = 'Pago'", conn)['total'].fillna(0).values[0]
-    
-    col1, col2 = st.columns(2)
-    col1.metric("💰 Total a Receber (Futuro)", f"R$ {total_receber:.2f}")
-    col2.metric("✅ Total Já Recebido (Em Caixa)", f"R$ {total_recebido:.2f}")
-    
-    st.markdown("---")
-    st.subheader("📊 Cálculo de Lucros por Venda")
-    
-    df_lucros = pd.read_sql_query("SELECT id, nome, valor_total, porcentagem_lucro FROM clientes", conn)
-    
-    if not df_lucros.empty:
-        df_lucros['Lucro Estimado (R$)'] = (df_lucros['valor_total'] * df_lucros['porcentagem_lucro']) / 100
-        st.dataframe(df_lucros, use_container_width=True)
-        lucro_total_geral = df_lucros['Lucro Estimado (R$)'].sum()
-        st.info(f"✨ Seu lucro total estimado com base nos contratos atuais é de: **R$ {lucro_total_geral:.2f}**")
-    else:
-        st.info("Nenhum contrato ativo para calcular lucros.")
+    try:
+        total_receber = pd.read_sql_query("SELECT SUM(valor_parcela) as total FROM parcelas WHERE status != 'Pago'", conn)['total'].fillna(0).values[0]
+        total_recebido = pd.read_sql_query("SELECT SUM(valor_parcela) as total FROM parcelas WHERE status = 'Pago'", conn)['total'].fillna(0).values[0]
+        
+        col1, col2 = st.columns(2)
+        col1.metric("💰 Total a Receber (Futuro)", f"R$ {total_receber:.2f}")
+        col2.metric("✅ Total Já Recebido (Em Caixa)", f"R$ {total_recebido:.2f}")
+        
+        st.markdown("---")
+        st.subheader("📊 Cálculo de Lucros por Venda")
+        
+        df_lucros = pd.read_sql_query("SELECT id, nome, valor_total, porcentagem_lucro FROM clientes", conn)
+        
+        if not df_lucros.empty:
+            df_lucros['Lucro Estimado (R$)'] = (df_lucros['valor_total'] * df_lucros['porcentagem_lucro']) / 100
+            st.dataframe(df_lucros, use_container_width=True)
+            lucro_total_geral = df_lucros['Lucro Estimado (R$)'].sum()
+            st.info(f"✨ Seu lucro total estimado com base nos contratos atuais é de: **R$ {lucro_total_geral:.2f}**")
+        else:
+            st.info("Nenhum contrato ativo para calcular lucros.")
+    except:
+        st.info("Aguardando registros para gerar os relatórios.")
 
 # ----------------- ABA 4: HISTÓRICO GERAL -----------------
 with aba4:
     st.header("📁 Histórico de Todas as Parcelas")
-    df_todas_parcelas = pd.read_sql_query("""
-        SELECT p.id, c.nome, p.numero_parcela, p.data_vencimento, p.valor_parcela, p.status 
-        FROM parcelas p JOIN clientes c ON p.cliente_id = c.id ORDER BY p.data_vencimento DESC
-    """, conn)
-    if not df_todas_parcelas.empty:
-        st.dataframe(df_todas_parcelas, use_container_width=True)
-    else:
-        st.info("Nenhuma parcela registrada no histórico.")
+    try:
+        df_todas_parcelas = pd.read_sql_query("""
+            SELECT p.id, c.nome, p.numero_parcela, p.data_vencimento, p.valor_parcela, p.status 
+            FROM parcelas p INNER JOIN clientes c ON p.cliente_id = c.id ORDER BY p.data_vencimento DESC
+        """, conn)
+        if not df_todas_parcelas.empty:
+            st.dataframe(df_todas_parcelas, use_container_width=True)
+        else:
+            st.info("Nenhuma parcela registrada no histórico.")
+    except:
+        st.info("Histórico de parcelas vazio.")
 
 # ----------------- ABA 5: REMOVER DADOS -----------------
 with aba5:
     st.header("❌ Excluir Cliente do Sistema")
-    df_selecao = pd.read_sql_query("SELECT id, nome FROM clientes", conn)
-    if not df_selecao.empty:
-        opcoes_clientes = [f"{row['id']} - {row['nome']}" for idx, row in df_selecao.iterrows()]
-        cliente_para_excluir = st.selectbox("Selecione o cliente para deletar:", opcoes_clientes)
-        id_cliente_excluir = int(cliente_para_excluir.split(" - ")[0])
-        
-        if st.button("🗑️ Apagar Permanentemente", type="primary"):
-            cursor.execute("DELETE FROM parcelas WHERE cliente_id = ?", (id_cliente_excluir,))
-            cursor.execute("DELETE FROM clientes WHERE id = ?", (id_cliente_excluir,))
-            conn.commit()
-            st.success("Removido com sucesso!")
-            st.rerun()
-    else:
-        st.info("Nenhum cliente cadastrado no momento para exclusão.")
+    try:
+        df_selecao = pd.read_sql_query("SELECT id, nome FROM clientes", conn)
+        if not df_selecao.empty:
+            opcoes_clientes = [f"{row['id']} - {row['nome']}" for idx, row in df_selecao.iterrows()]
+            cliente_para_excluir = st.selectbox("Selecione o cliente para deletar:", opciones_clientes)
+            id_cliente_excluir = int(cliente_para_excluir.split(" - ")[0])
+            
+            if st.button("🗑️ Apagar Permanentemente", type="primary"):
+                cursor.execute("DELETE FROM parcelas WHERE cliente_id = ?", (id_cliente_excluir,))
+                cursor.execute("DELETE FROM clientes WHERE id = ?", (id_cliente_excluir,))
+                conn.commit()
+                st.success("Removido com sucesso!")
+                st.rerun()
+        else:
+            st.info("Nenhum cliente cadastrado no momento para exclusão.")
+    except:
+        st.info("Sem dados disponíveis para exclusão.")
